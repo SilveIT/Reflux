@@ -29,6 +29,7 @@ const dataHome = process.env.XDG_DATA_HOME || path.join(home, '.local', 'share')
 
 const PRODUCT_DIRS = process.platform === 'win32'
   ? [
+    path.join(localAppData, 'fluxer_desktop'),
     path.join(localAppData, 'fluxer_app'),
     path.join(localAppData, 'fluxer_app_canary'),
     path.join(localAppData, 'Fluxer'),
@@ -57,7 +58,7 @@ const ASAR_PRELOAD_ENTRY = 'dist/preload/index.cjs';
 function findLatestResourcesDir(productDir) {
   if (!fs.existsSync(productDir)) return null;
   const appDirs = fs.readdirSync(productDir, { withFileTypes: true })
-    .filter(e => e.isDirectory() && e.name.startsWith('app-'))
+    .filter(e => e.isDirectory() && (e.name.startsWith('app-') || e.name === 'current'))
     .map(e => e.name)
     .sort()
     .reverse();

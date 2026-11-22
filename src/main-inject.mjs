@@ -58,9 +58,11 @@ const pluginData    = require('./core/pluginData.js');
 const pluginManager = require('./core/pluginManager.js');
 const pluginIpc     = require('./core/pluginIpc.js');
 const pluginWatcher = require('./core/pluginWatcher.js');
+const log           = require('./core/log.js');
 
 // Register IPC handlers immediately (before app.whenReady so handlers are in
 // place by the time any renderer tries to call them).
+log.registerIpc(ipcMain);
 settings.registerIpc(ipcMain);
 pluginData.registerIpc(ipcMain);
 pluginIpc.registerIpc(ipcMain);
@@ -105,8 +107,11 @@ pluginManager.registerIpc(ipcMain, {
  * Is this WebContents one of Fluxer's app renderers?
  *
  * Fluxer's packaged desktop app serves the renderer from `fluxer-app://app/`;
- * the browser build uses `https://web.fluxer.app`.  The updater/splash window
- * uses `file://` and must not receive the renderer bootstrap or plugins.
+ * the browser build uses `https://web.fluxer.app`. Several hosts serve this app — web.fluxer.app,
+ * web.canary.fluxer.app, fluxer.com and canary.fluxer.com — so one literal misses live toggles on
+ * the others. Registrable-suffix matching keeps every app host while excluding status/static/media/gift
+ * hosts, which are separate domains rather than subdomains of these two.
+ * The updater/splash window uses `file://` and must not receive the renderer bootstrap or plugins.
  *
  * @param {Electron.WebContents} wc
  * @returns {boolean}
@@ -114,10 +119,11 @@ pluginManager.registerIpc(ipcMain, {
 function isFluxerRenderer(wc) {
   try {
     const url = wc.getURL();
-    return url.startsWith('fluxer-app://app') || url.includes('web.fluxer.app');
-  } catch {
-    return false;
-  }
+    if (url.startsWith('fluxer-app://app')) return true;
+    const host = new URL(url).hostname;
+    return host === 'fluxer.app' || host.endsWith('.fluxer.app') ||
+           host === 'fluxer.com' || host.endsWith('.fluxer.com');
+  } catch { return false; }
 }
 
 /**

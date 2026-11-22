@@ -636,71 +636,60 @@
   }
 
   /**
-   * Hook into the webpack chunk push API.
-   *
-   * The chunk array is named `webpackChunkfluxer` (derived from the `output.
-   * chunkLoadingGlobal` rspack config, which defaults to `webpackChunk` +
-   * camelCase package name).  We try multiple possible names.
-   *
-   * Each push call has the shape:
-   *   [chunkIds, moduleMap, runtimeFn]
-   * where moduleMap is `{ [moduleId]: (module, exports, require) => void }`.
+   * Hook into the webpack/rspack chunk push API.
+   * Fluxer's renderer is built by Rspack: it registers chunks as
+   * `(globalThis.rspackChunkfluxer_app ||= []).push(...)`. Only webpack-prefixed names were tried before,
+   * so the patcher hooked nothing and every module lookup came back empty.
+   * Each pushed chunk has the shape [chunkIds, moduleMap, runtimeFn].
    */
   function _hookChunkPush() {
-    const CHUNK_ARRAY_NAMES = ['webpackChunkfluxer', 'webpackChunk', 'webpackChunkapp'];
+    const CHUNK_ARRAY_RE = /^(?:webpack|rspack)Chunk/i;
 
-    for (const name of CHUNK_ARRAY_NAMES) {
-      _tryHookChunkArray(name);
-    }
+    // Names worth trying even when absent today; ones created later are caught by the watcher below.
+    const _definedArrays = new Set(['webpackChunkfluxer', 'webpackChunk', 'webpackChunkapp']);
+    for (const name of Object.keys(window)) if (CHUNK_ARRAY_RE.test(name)) _definedArrays.add(name);
+    for (const name of _definedArrays) _tryHookChunkArray(name);
 
-    // Also watch for the chunk array to be created later (lazy loading).
-    const _definedArrays = new Set(CHUNK_ARRAY_NAMES);
+    // Proxy `Object.defineProperty` on window to catch chunk arrays created later.
     const _origDefineProperty = Object.defineProperty.bind(Object);
-
-    // Proxy `Object.defineProperty` on window to catch new chunk arrays.
-    // Only active until the first chunk array is found.
     const _cleanup = () => { Object.defineProperty = _origDefineProperty; };
-    Object.defineProperty = function(obj, prop, descriptor) {
+    Object.defineProperty = function (obj, prop, descriptor) {
       const result = _origDefineProperty(obj, prop, descriptor);
-      if (obj === window && !_definedArrays.has(prop) && prop.startsWith('webpackChunk')) {
+      if (obj === window && !_definedArrays.has(prop) && CHUNK_ARRAY_RE.test(prop)) {
         _definedArrays.add(prop);
         _tryHookChunkArray(prop);
       }
       return result;
     };
 
-    // Clean up the Object.defineProperty hook after a short delay.
+    // Stop watching once the first chunk array has been found.
     setTimeout(_cleanup, 5000);
-
   }
 
   /**
    * @param {string} arrayName
    */
   function _tryHookChunkArray(arrayName) {
-    const _chunkArray = window[arrayName];
-
-    // Process any chunks already loaded.
-    if (Array.isArray(_chunkArray)) {
-      for (const chunk of _chunkArray) {
-        _processChunk(chunk);
-      }
+    let _chunkArray = window[arrayName];
+    if (!Array.isArray(_chunkArray)) {
+      // Nothing there yet: create it now so the bundle's `(globalThis.x ||= [])` keeps ours.
+      _chunkArray = window[arrayName] = [];
+    } else {
+      // Wrap chunks the bundle evaluated before injection.
+      for (const chunk of _chunkArray) _processChunk(chunk);
     }
 
-    // Create (or re-create) the array with a wrapped push.
-    const proxy = new Proxy(_chunkArray ?? [], {
-      get(target, prop) {
-        if (prop === 'push') {
-          return function reflux_chunkPush(chunk) {
-            _processChunk(chunk);
-            return Array.prototype.push.call(target, chunk);
-          };
-        }
-        return target[prop];
+    // Keep the real array: Rspack holds its own reference and assigns push onto it.
+    // A Proxy hid pushes from the runtime, hanging Fluxer at its "Try again" splash screen.
+    let current = typeof _chunkArray.push === 'function' ? _chunkArray.push.bind(_chunkArray) : null;
+    Object.defineProperty(_chunkArray, 'push', {
+      configurable: true,
+      get: () => (chunk) => {
+        _processChunk(chunk);   // wrap factories before the runtime registers this chunk's modules
+        return current ? current(chunk) : Array.prototype.push.call(_chunkArray, chunk);
       },
+      set: (fn) => { current = typeof fn === 'function' ? fn.bind(_chunkArray) : null; },
     });
-
-    window[arrayName] = proxy;
   }
 
   /**
@@ -5160,6 +5149,10 @@
 
   const __reflux = {
     version:       '1.0.0',
+    // Tagged log line; reaches core/log.js through refluxBridge, off unless REFLUX_LOG is set.
+    log(where, detail) {
+      try { window.refluxBridge?.log?.(where ?? 'reflux', detail); } catch {}
+    },
     patcher,
     ui,
     contextMenu,

@@ -53,6 +53,7 @@ const dataHome = process.env.XDG_DATA_HOME || path.join(home, '.local', 'share')
 
 const PRODUCT_DIRS = process.platform === 'win32'
   ? [
+    path.join(localAppData, 'fluxer_desktop'),
     path.join(localAppData, 'fluxer_app'),
     path.join(localAppData, 'fluxer_app_canary'),
     path.join(localAppData, 'Fluxer'),
@@ -88,7 +89,7 @@ const ASAR_PRELOAD_ENTRY = 'dist/preload/index.cjs';
 
 /**
  * Within a Squirrel product directory, find the resources folder of the latest
- * installed version (app-<semver>/resources).
+ * installed version (app-<version>/resources, or Velopack current/resources).
  * @param {string} productDir  e.g. %LOCALAPPDATA%\Fluxer
  * @returns {string|null}
  */
@@ -96,7 +97,7 @@ function findLatestResourcesDir(productDir) {
   if (!fs.existsSync(productDir)) return null;
 
   const appDirs = fs.readdirSync(productDir, { withFileTypes: true })
-    .filter(e => e.isDirectory() && e.name.startsWith('app-'))
+    .filter(e => e.isDirectory() && (e.name.startsWith('app-') || e.name === 'current'))
     .map(e => e.name)
     .sort()          // lexicographic sort is fine for semver-like "app-1.2.3"
     .reverse();      // newest first

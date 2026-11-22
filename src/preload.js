@@ -49,6 +49,7 @@ const CH = {
   PLUGIN_IPC_EVENT:  'reflux:plugin-ipc-event',
   PLUGIN_IPC_REQUEST: 'reflux:plugin-ipc-request',
   PLUGIN_IPC_RESPONSE: 'reflux:plugin-ipc-response',
+  LOG:                 'reflux:log',   // fire-and-forget; written only while REFLUX_LOG is set
 };
 
 const _pluginIpcEventListeners = new Set();
@@ -143,6 +144,9 @@ try {
       _pluginIpcRequestListeners.add(callback);
       return () => _pluginIpcRequestListeners.delete(callback);
     },
+
+    /** Tagged log line for core/log.js; no-op unless REFLUX_LOG is set. */
+    log: (where, detail) => ipcRenderer.send(CH.LOG, {where: String(where ?? 'renderer'), detail}),
 
     /** Reflux version string. */
     version: '1.0.0',

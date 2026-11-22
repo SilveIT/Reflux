@@ -2,7 +2,23 @@
 
 const {session} = require('electron');
 
-const FILTER = {urls: ['https://web.fluxer.app/api/v1/channels/*/typing']};
+// Four API prefixes ship in this fork, each with several versions; one pattern cancels nothing on
+// the others — which is how this plugin used to fail silently as a no-op.
+const PREFIXES = [
+	'https://web.fluxer.app',
+	'https://web.canary.fluxer.app',
+	'https://fluxer.com',
+	'https://canary.fluxer.com',
+];
+const VERSIONS = ['v1', 'v2', 'v10'];
+
+const FILTER = {
+	urls: PREFIXES.flatMap((prefix) =>
+		VERSIONS.map((version) => `${prefix}/api/${version}/channels/*/typing`)),
+};
+
+// Belt and braces: only cancel what really is a typing request.
+const TYPING_REQUEST = /\/channels\/[^/]+\/typing(?:[?#]|$)/;
 
 let _enabled = false;
 
@@ -16,7 +32,8 @@ module.exports = {
 	start() {
 		_enabled = true;
 		session.defaultSession.webRequest.onBeforeRequest(FILTER, (details, callback) => {
-			callback({cancel: _enabled});
+			// Cancelling needs the attached listener; the flag is what turns the plugin off again.
+			callback(TYPING_REQUEST.test(details.url) ? {cancel: _enabled} : {});
 		});
 	},
 

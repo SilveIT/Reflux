@@ -22,7 +22,7 @@
 - `contextBridge` IPC bridge exposing settings, plugin management, and plugin-owned data to the renderer
 - Per-plugin native IPC with renderer → main calls, main → renderer events, and request/response handlers
 - Chat-bar and message-action buttons plus user-badge, member-list, and server-list hooks
-- `DataStore` for synchronous per-plugin state, lazy module finders, and per-plugin patch registries
+- `DataStore` for synchronous per-plugin state, lazy module finders across webpack and Rspack chunk globals, and per-plugin patch registries
 - Managed plugin CSS and themes, including persistent theme activation
 - Automatic plugin hot reload from `index.js` / `renderer-side.js` changes (disable with `reflux.hotReload`)
 - Gateway WebSocket interception for event hooks
@@ -30,7 +30,8 @@
 - Import custom `.js` plugins at runtime with `==RefluxPlugin==` metadata blocks
 - Reusable renderer context-menu API for plugin-provided menu items
 - Settings persisted to `%APPDATA%\Reflux\settings.json` on Windows or `~/.config/Reflux/settings.json` on Linux; plugin data lives under `plugin-data/`
-- Recognizes both Fluxer's packaged renderer (`fluxer-app://app/`) and the browser build (`https://web.fluxer.app`)
+- Recognizes every app host: `fluxer-app://app/`, `web.fluxer.app`, `web.canary.fluxer.app`, `fluxer.com` and `canary.fluxer.com`
+- Opt-in shared log (`REFLUX_LOG`) appended to `logs/reflux.log` beside `settings.json`, fed from the main process and from renderer windows
 
 <h2 align="center">Bundled plugins</h2>
 
@@ -40,6 +41,7 @@
 | **Message Logger** | Re-displays deleted messages inline, highlights edited originals, and optionally persists history across restarts |
 | **Gateway Debug Tools** | Captures redacted gateway event summaries in a copyable in-app log |
 | **Invisible Typing** | Prevents Fluxer from sending typing indicators to other users |
+| **Voice Tray Status** | Draws mic on / speaking / muted / deafened on Fluxer's tray icon plus a red unread dot; `Unread dot` setting |
 
 <h2 align="center">Install</h2>
 
@@ -75,7 +77,7 @@ Restart Fluxer after running an install/update command.
 
 Reflux searches the usual Fluxer locations automatically:
 
-- **Windows**: `%LOCALAPPDATA%\fluxer_app`, `%LOCALAPPDATA%\Fluxer`, and Canary equivalents
+- **Windows**: `%LOCALAPPDATA%\fluxer_desktop\current\resources` (Velopack), `%LOCALAPPDATA%\fluxer_app`, `%LOCALAPPDATA%\Fluxer`, and Canary equivalents
 - **Linux**: `~/.local/share/Fluxer`, `~/.local/share/fluxer`, `~/.local/share/fluxer_app`, `~/.config/Fluxer`, `~/.config/fluxer`, `/opt/fluxer-bin/resources`, and common `/usr/lib` / `/usr/share` locations
 
 If Fluxer lives somewhere else, provide the exact `app.asar` path with `FLUXER_ASAR`:
@@ -93,7 +95,7 @@ sudo FLUXER_ASAR=/opt/fluxer-bin/resources/app.asar node installer/cli/index.js
 On Windows, the equivalent is:
 
 ```powershell
-$env:FLUXER_ASAR = "C:\Users\<USERNAME>\AppData\Local\fluxer_app\app-0.0.8\resources\app.asar"
+$env:FLUXER_ASAR = "C:\Users\<USERNAME>\AppData\Local\fluxer_desktop\current\resources\app.asar"
 node installer\cli\index.js
 ```
 
@@ -127,7 +129,7 @@ Restart Fluxer after installing. The main-process log should contain:
 ```text
 [Reflux:Main] Bootstrap loaded.
 [Reflux:Main] Ready. Settings: ...
-[Reflux:Main] Active plugins: debugTools, invisibleTyping, messageLogger, settingsUI
+[Reflux:Main] Active plugins: debugTools, invisibleTyping, messageLogger, settingsUI, voiceTrayStatus
 ```
 
 Open Fluxer's user settings and look for the **Reflux → Plugins** section. In
@@ -206,8 +208,14 @@ src/
   renderer.js       Core bootstrap injected into the web renderer
   core/
     settings.js     Read/write settings.json, IPC handlers
+    log.js          Opt-in shared log (REFLUX_LOG), IPC relay from renderer windows
     pluginData.js   Read/write per-plugin JSON data, IPC handlers
     pluginManager.js  Discover, start/stop plugins, IPC handlers
+    pluginIpc.js    Per-plugin native IPC bridge, IPC handlers
+    pluginWatcher.js  Hot reload for index.js / renderer-side.js changes
+    pluginSchema.js Shared plugin definition and settings-schema helpers
+    pluginApi.js    definePlugin() entry point for main-process plugins
+    pluginSettings.js Scoped per-plugin settings stores
     safeHtml.js     Allowlist-based HTML/SVG sanitizer shared by plugins
     pluginMetadata.js  Import metadata parsing and validation
     messageHistory.js  Message history serialization, import, and limits
@@ -218,6 +226,7 @@ src/
     messageLogger/  Deleted/edited message history with optional persistence
     debugTools/     Redacted gateway event inspector with copyable logs
     invisibleTyping/ Cancels outgoing typing-indicator requests
+    voiceTrayStatus/ Tray-icon voice state; PNG glyphs under assets/, built by make-icons.mjs
 tests/              VM/jsdom smoke harness (npm test)
 ```
 
@@ -237,7 +246,7 @@ the first time the new version loads.
 
 <h2 align="center">Default install path</h2>
 
-- Windows: `%LOCALAPPDATA%\fluxer_app\app-<version>\resources\`
+- Windows: `%LOCALAPPDATA%\fluxer_desktop\current\resources\` (Velopack) or `%LOCALAPPDATA%\fluxer_app\app-<version>\resources\`
 - Canary: `%LOCALAPPDATA%\Fluxer Canary\app-<version>\resources\`
 - Linux (local/unpacked): `~/.local/share/Fluxer/` or `~/.local/share/fluxer/`
 - Linux alternatives: `~/.local/share/fluxer_app/`, `~/.config/Fluxer/`, `~/.config/fluxer/`
